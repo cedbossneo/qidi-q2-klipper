@@ -2836,10 +2836,10 @@ index e7f35d4e..67cddf53 100644
 +    return LoadCellPrinterProbe(config, sensor_class(config))
 diff --git a/klippy/extras/trigger_analog.py b/klippy/extras/trigger_analog.py
 new file mode 100644
-index 00000000..0b239e4c
+index 00000000..3f12b31f
 --- /dev/null
 +++ b/klippy/extras/trigger_analog.py
-@@ -0,0 +1,495 @@
+@@ -0,0 +1,498 @@
 +# Wrapper around mcu trigger_analog objects
 +#
 +# Copyright (C) 2025 Gareth Farrington <gareth@waves.ky>
@@ -3278,6 +3278,9 @@ index 00000000..0b239e4c
 +
 +    def _clear_home(self):
 +        self._home_cmd.send([self._oid, 0, 0, 0, 0, 0, 0, 0])
++        if self._mcu.is_fileoutput():
++            # Kalico has no dummy query responses in batch mode
++            return 0.0
 +        params = self._query_state_cmd.send([self._oid])
 +        trigger_ticks = self._mcu.clock32_to_clock64(params["homing_clock"])
 +        return self._mcu.clock_to_print_time(trigger_ticks)
