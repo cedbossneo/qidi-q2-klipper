@@ -8,7 +8,7 @@
 // https://codeberg.org/kuwoyuki/klipper-q2
 // Interrupt-driven acquisition based on Anycubic's MCU implementation:
 // https://github.com/ANYCUBIC-3D/K3-klipper-mcu/blob/main/src/sensor_cs1237.c
-// Adapted to Kalico's load_cell_probe interface.
+// Adapted to Kalico and the mainline trigger_analog interface.
 
 #include <stdint.h>
 #include "autoconf.h" // CONFIG_MACH_AVR
@@ -19,7 +19,7 @@
 #include "command.h" // DECL_COMMAND
 #include "sched.h" // sched_add_timer
 #include "sensor_bulk.h" // sensor_bulk_report
-#include "load_cell_probe.h" // load_cell_probe_report_sample
+#include "trigger_analog.h" // trigger_analog_update
 #if CONFIG_MACH_GD32F303_Q2
 #include "generic/armcm_boot.h" // armcm_enable_irq
 #include "stm32/internal.h" // GPIO and STM32 register definitions
@@ -38,7 +38,7 @@ struct cs1237_adc {
     struct gpio_out dout_out;
     struct gpio_out sclk;
     struct sensor_bulk sb;
-    struct load_cell_probe *lce;
+    struct trigger_analog *ta;
 #if CONFIG_MACH_GD32F303_Q2
     uint8_t use_drdy_irq;
 #endif
@@ -54,6 +54,25 @@ enum {
 #define SAMPLE_ERROR_TIMEOUT (1L << 31)
 #define SAMPLE_ERROR_READ_TOO_LONG (1L << 30)
 #define SAMPLE_ERROR_CONFIG (1L << 29)
+
+// Sensor specific errors reported to trigger_analog while homing
+enum {
+    CSE_TIMEOUT = 1, CSE_READ_TOO_LONG, CSE_CONFIG
+};
+DECL_ENUMERATION("cs1237_error:", "SAMPLE_TIMEOUT", CSE_TIMEOUT);
+DECL_ENUMERATION("cs1237_error:", "READ_TOOK_TOO_LONG", CSE_READ_TOO_LONG);
+DECL_ENUMERATION("cs1237_error:", "CONFIG_NOT_ACCEPTED", CSE_CONFIG);
+
+// Map a bulk stream error sentinel to a trigger_analog sensor error code
+static uint8_t
+cs1237_error_code(uint32_t last_error)
+{
+    if (last_error == SAMPLE_ERROR_READ_TOO_LONG)
+        return CSE_READ_TOO_LONG;
+    if (last_error == SAMPLE_ERROR_CONFIG)
+        return CSE_CONFIG;
+    return CSE_TIMEOUT;
+}
 
 // CS1237 command words (7-bit)
 #define CMD_WRITE_CONFIG 0x65
@@ -443,11 +462,12 @@ cs1237_read_adc(struct cs1237_adc *cs1237, uint8_t oid)
         // Report the error sentinel through the bulk stream and stop polling.
         // The host detects the sentinel and restarts capture to recover.
         sched_del_timer(&cs1237->timer);
+        trigger_analog_note_error(cs1237->ta,
+                                  cs1237_error_code(cs1237->last_error));
         add_sample(cs1237, oid, counts, 1);
     } else {
         // probe is optional, report if enabled
-        if (cs1237->lce)
-            load_cell_probe_report_sample(cs1237->lce, counts);
+        trigger_analog_update(cs1237->ta, counts);
         add_sample(cs1237, oid, counts, 0);
     }
 }
@@ -464,7 +484,7 @@ command_config_cs1237(uint32_t *args)
     cs1237->dout_in = gpio_in_setup(args[2], 1);
     cs1237->sclk = gpio_out_setup(args[3], 1); // high -> power down
     cs1237->last_sample = 0;
-    cs1237->lce = NULL;
+    cs1237->ta = NULL;
 #if CONFIG_MACH_GD32F303_Q2
     cs1237_drdy_irq_setup(cs1237, args[2]);
 #endif
@@ -473,13 +493,15 @@ DECL_COMMAND(command_config_cs1237, "config_cs1237 oid=%c config=%c"
              " dout_pin=%u sclk_pin=%u");
 
 void
-cs1237_attach_load_cell_probe(uint32_t *args)
+cs1237_attach_trigger_analog(uint32_t *args)
 {
     struct cs1237_adc *cs1237 = oid_lookup(args[0], command_config_cs1237);
-    cs1237->lce = load_cell_probe_oid_lookup(args[1]);
+    cs1237->ta = trigger_analog_oid_lookup(args[1]);
 }
-DECL_COMMAND(cs1237_attach_load_cell_probe, "cs1237_attach_load_cell_probe"
-             " oid=%c load_cell_probe_oid=%c");
+#if CONFIG_WANT_TRIGGER_ANALOG
+DECL_COMMAND(cs1237_attach_trigger_analog, "cs1237_attach_trigger_analog"
+             " oid=%c trigger_analog_oid=%c");
+#endif
 
 // Start/stop capturing ADC data
 void
@@ -557,6 +579,7 @@ cs1237_capture_task(void)
             if (ret) {
                 cs1237->last_error = SAMPLE_ERROR_CONFIG;
                 sched_del_timer(&cs1237->timer);
+                trigger_analog_note_error(cs1237->ta, CSE_CONFIG);
                 add_sample(cs1237, oid, cs1237->last_error, 1);
             }
 #if CONFIG_MACH_GD32F303_Q2

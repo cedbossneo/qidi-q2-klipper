@@ -5,8 +5,6 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 from klippy.extras.load_cell import ads131m0x, ads1220, cs1237, hx71x
 from klippy.extras.load_cell.load_cell_probe import LoadCellPrinterProbe
-from klippy.extras.load_cell.tap_analysis import TapClassifierModule
-from klippy.extras.load_cell.tap_quality_classifier import TapQualityClassifier
 from klippy.printer import Printer, SubsystemComponentCollection
 
 
@@ -20,21 +18,10 @@ def register_components(subsystem: SubsystemComponentCollection):
     )
     for name, sensor in sensors.items():
         subsystem.register_component("load_cell_probe_sensors", name, sensor)
-    key = "load_cell_probe_tap_classifiers"
-    subsystem.register_component(key, "empty", TapClassifierModule)
-    subsystem.register_component(key, "tap_quality", TapQualityClassifier)
 
 
 def load_config(config):
     printer: Printer = config.get_printer()
     sensors = printer.lookup_components("load_cell_probe_sensors")
     sensor_class = config.getchoice("sensor_type", sensors)
-    tap_classifiers = printer.lookup_components(
-        "load_cell_probe_tap_classifiers"
-    )
-    tap_classifier = config.getchoice(
-        "tap_classifier", tap_classifiers, default="tap_quality"
-    )
-    return LoadCellPrinterProbe(
-        config, sensor_class(config), tap_classifier(config)
-    )
+    return LoadCellPrinterProbe(config, sensor_class(config))

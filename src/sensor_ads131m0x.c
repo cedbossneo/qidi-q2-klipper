@@ -11,7 +11,7 @@
 #include "command.h" // DECL_COMMAND
 #include "sched.h" // sched_add_timer
 #include "sensor_bulk.h" // sensor_bulk_report
-#include "load_cell_probe.h" // load_cell_probe_report_sample
+#include "trigger_analog.h" // trigger_analog_update
 #include "spicmds.h" // spidev_transfer
 #include <stdint.h>
 
@@ -28,12 +28,19 @@ struct ads131m0x_adc {
     uint8_t sample_bytes;
     uint8_t frame_size;
     struct sensor_bulk sb;
-    struct load_cell_probe *lce;
+    struct trigger_analog *ta;
 };
 
 // Error codes sent as sample values (use high bits to distinguish from valid data)
 #define SAMPLE_ERROR_CRC     (1L << 31)
 #define SAMPLE_ERROR_RESET   (1L << 30)
+
+// Sensor specific errors reported to trigger_analog while homing
+enum {
+    SE_ERROR_CRC = 1, SE_ERROR_RESET = 2
+};
+DECL_ENUMERATION("ads131m0x_error:", "SENSOR_ERROR_CRC", SE_ERROR_CRC);
+DECL_ENUMERATION("ads131m0x_error:", "SENSOR_ERROR_RESET", SE_ERROR_RESET);
 #define BYTES_PER_SAMPLE     4
 #define SENSOR_WORD_SIZE     3
 #define MAX_ADC_CHANNELS     4
@@ -118,8 +125,7 @@ publish_samples(struct ads131m0x_adc *adc, uint8_t oid, uint8_t *msg)
         sum += counts;
         buffer_append_int32(&adc->sb, counts);
     }
-    if (adc->lce)
-        load_cell_probe_report_sample(adc->lce, sum);
+    trigger_analog_update(adc->ta, sum);
     ads131m0x_flush(adc, oid);
 }
 
@@ -166,9 +172,11 @@ ads131m0x_read_adc(struct ads131m0x_adc *adc, uint8_t oid)
     if (msg[0] & STATUS_RESET_BIT)
         adc->hard_error_latch = SAMPLE_ERROR_RESET;
     if (adc->hard_error_latch) {
+        trigger_analog_note_error(adc->ta, SE_ERROR_RESET);
         publish_error(adc, oid, adc->hard_error_latch);
     }
     else if (has_crc_error(adc, msg)) {
+        trigger_analog_note_error(adc->ta, SE_ERROR_CRC);
         publish_error(adc, oid, SAMPLE_ERROR_CRC);
     }
     else {
@@ -207,13 +215,15 @@ DECL_COMMAND(command_config_ads131m0x,
     " sensor_channel_count=%c channel_mask=%c");
 
 void
-ads131m0x_attach_load_cell_probe(uint32_t *args) {
+ads131m0x_attach_trigger_analog(uint32_t *args) {
     uint8_t oid = args[0];
     struct ads131m0x_adc *adc = oid_lookup(oid, command_config_ads131m0x);
-    adc->lce = load_cell_probe_oid_lookup(args[1]);
+    adc->ta = trigger_analog_oid_lookup(args[1]);
 }
-DECL_COMMAND(ads131m0x_attach_load_cell_probe,
-    "ads131m0x_attach_load_cell_probe oid=%c load_cell_probe_oid=%c");
+#if CONFIG_WANT_TRIGGER_ANALOG
+DECL_COMMAND(ads131m0x_attach_trigger_analog,
+    "ads131m0x_attach_trigger_analog oid=%c trigger_analog_oid=%c");
+#endif
 
 void
 command_query_ads131m0x(uint32_t *args)

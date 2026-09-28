@@ -73,7 +73,7 @@ class CS1237(LoadCellSensor):
         )
         # Command Configuration
         self.query_cs1237_cmd = None
-        self.attach_probe_cmd = None
+        self._sensor_errors = {}
         mcu.add_config_cmd(
             "config_cs1237 oid=%d config=%d dout_pin=%s sclk_pin=%s"
             % (self.oid, config_reg, self.dout_pin, self.sclk_pin)
@@ -83,18 +83,24 @@ class CS1237(LoadCellSensor):
         )
         mcu.register_config_callback(self._build_config)
 
+    def setup_trigger_analog(self, trigger_analog_oid: int):
+        self.mcu.add_config_cmd(
+            "cs1237_attach_trigger_analog oid=%d trigger_analog_oid=%d"
+            % (self.oid, trigger_analog_oid),
+            is_init=True,
+        )
+
     def _build_config(self):
         self.query_cs1237_cmd = self.mcu.lookup_command(
             "query_cs1237 oid=%c rest_ticks=%u"
-        )
-        self.attach_probe_cmd = self.mcu.lookup_command(
-            "cs1237_attach_load_cell_probe oid=%c load_cell_probe_oid=%c"
         )
         self.ffreader.setup_query_command(
             "query_cs1237_status oid=%c",
             oid=self.oid,
             cq=self.mcu.alloc_command_queue(),
         )
+        errors = self.mcu.get_enumerations().get("cs1237_error:", {})
+        self._sensor_errors = {v: k for k, v in errors.items()}
 
     def get_mcu(self) -> MCU:
         return self.mcu
@@ -114,8 +120,17 @@ class CS1237(LoadCellSensor):
     def add_client(self, callback: BulkAdcDataCallback):
         self.batch_bulk.add_client(callback)
 
-    def attach_load_cell_probe(self, load_cell_probe_oid: int):
-        self.attach_probe_cmd.send([self.oid, load_cell_probe_oid])
+    def get_status(self, eventtime):
+        return {
+            "errors": self.last_error_count,
+            "overflows": self.ffreader.get_last_overflows(),
+            "sample_rate": self.sps,
+        }
+
+    def lookup_sensor_error(self, error_code: int) -> str:
+        return self._sensor_errors.get(
+            error_code, "Unknown CS1237 error %d" % (error_code,)
+        )
 
     # Measurement decoding
     def _convert_samples(self, samples):

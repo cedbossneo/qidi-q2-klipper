@@ -384,10 +384,14 @@ class LoadCellSampleCollector:
         self._errors = 0
         overflows = self._overflows
         self._overflows = 0
+        if self._mcu.is_fileoutput():
+            samples = [(0.0, 0.0, 0.0)]
         return samples, (errors, overflows) if errors or overflows else 0
 
     def _collect_until(self, timeout):
         self.start_collecting()
+        if self._mcu.is_fileoutput():
+            return self._finish_collecting()
         # calculate print time delay and convert to reactor time
         now = self._reactor.monotonic()
         print_time = self._mcu.estimated_print_time(now)
@@ -656,4 +660,5 @@ class LoadCell:
                 "tare_force": self.tare_force,
             }
         )
+        status.update(self.sensor.get_status(eventtime))
         return status

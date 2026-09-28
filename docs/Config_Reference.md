@@ -5957,6 +5957,29 @@ dout_pin:
 #   in software.
 ```
 
+#### CS1237
+The CS1237 is a 24-bit ADC with software-selectable gain and sample rate. It is
+suitable for load-cell probing (used by the QIDI Q2 toolhead).
+```
+[load_cell]
+sensor_type: cs1237
+sclk_pin:
+#   The pin connected to the CS1237 clock line. This parameter must be
+#   provided.
+dout_pin:
+#   The bidirectional pin connected to the CS1237 data line. This parameter
+#   must be provided.
+#sample_rate: 1280
+#   Valid sample rates are 10, 40, 640, and 1280 samples per second. The
+#   default is 1280.
+#gain: 128
+#   Valid gain values are 1, 2, 64, and 128. The default is 128.
+#channel: A
+#   Valid channels are A, temperature, and short. The default is A.
+#refout_off: False
+#   Disable the CS1237 reference output when True. The default is False.
+```
+
 #### ADS1220
 The ADS1220 is a 24 bit ADC supporting up to a 2Khz sample rate configurable in
 software.
@@ -6077,25 +6100,27 @@ data_ready_pin:
 ### [load_cell_probe]
 Load Cell Probe. This combines the functionality of a [probe] and a [load_cell].
 
-See also [simple_tap_classifier] for tap validation configuration.
+The probe "taps" the bed: it descends until the MCU `trigger_analog`
+detects `trigger_force`, then lifts by `sample_retract_dist` while the
+force samples are collected, and fits the ascent force/Z data to find the
+height at which contact was lost. This is the mainline Klipper design
+(continuous tare + ascent fit); Kalico's retry options from the [probe]
+section (`bad_probe_strategy`, `bad_probe_retries`, ...) still apply.
 
 ```
 [load_cell_probe]
 sensor_type:
 #   This must be one of the supported bulk ADC sensor types and support
-#   load cell endstops on the mcu.
+#   trigger_analog on the mcu (hx711, hx717, cs1237, ads1220, ads131m0x).
 #counts_per_gram:
 #reference_tare_counts:
 #sensor_orientation:
 #   These parameters must be configured before the probe will operate.
 #   See the [load_cell] section for further details.
 #force_safety_limit: 2000
-#   The safe force limit for starting a probe. This is relative to the 
-#   reference_tare_counts which is the sensor's absolute 0 force value.
-#   Set to 0 to disable. The default is +/-2Kg.
-#drift_safety_limit: 1000
-#   The maximum absolute force change allowed while probing. Set to 0 to disable.
-#   The default is +/-1Kg.
+#   The safe limit for probing force relative to the reference_tare_counts on
+#   the load_cell. Exceeding it while probing aborts the probe. Set to 0 to
+#   disable. The default is +/-2Kg.
 #trigger_force: 75.0
 #   The force that the probe will trigger at. 75g is the default.
 #drift_filter_cutoff_frequency: 0.8
@@ -6121,55 +6146,28 @@ sensor_type:
 #notch_filter_quality: 2.0
 #   Controls how narrow the range of frequencies are that the notch filter
 #   removes. Larger numbers produce a narrower filter. Minimum value is 0.5 and
-#   maximum is 3.0. Default: 2.0
+#   maximum is 6.0. Default: 2.0
 #tare_time:
 #   The time in seconds used for taring the load_cell before each probe. The
-#   default value is: 5 / 50 = 0.1. This collects samples from 5 cycles of
-#   50Hz / 6 cycles of 60Hz mains power to cancel power line noise.
-#disable_pullback_move: False
-#   When True, disables the pullback move and tap analysis after probe trigger.
-#   The probe will use the raw trigger position instead of the calculated Z=0
-#   from tap analysis. This reduces probe accuracy but may be useful for
-#   troubleshooting or compatibility testing. The default is False.
-#pullback_distance: 0.2
-#   The distance in mm to slowly raise the probe to perform precise Z=0
-#   measurments. This move occurs immediately after the probe detects contact.
-#   The distance needs to be approximatly 2x the distance required for the probe
-#   to break contact with the bed. Valid range is 0.01 to 2.0 mm.
-#   The default is 0.2 mm.
-#pullback_speed:
-#   The speed in mm/s for the pullback move after probe trigger. Valid range is
-#   0.1 to 1.0 mm/s. The default is set to 1 micron (0.001mm) per sensor sample.
-#tap_classifier_module:
-#   Optional module for custom tap validation. The default is TapQualityClassifier.
-#   Setting a custom classifier overrides TapQualityClassifier with your implementation.
-#min_tap_quality: 40.0
-#   The minimum acceptable tap quality score. Valid range is 0 to 100 percent.
-#   The default is 40%.
-#decompression_angle:
-#   The average angle of the decompression line for clean taps. The further the
-#   measured decompression angle is from this angle, the worse its tap quality score.
-#   There is no default, this must be measured. It is a number in degrees
-#   between 0 and 90.
-#max_approach_force: 50
-#max_departure_force: 25
-#max_baseline_force_delta: 25
-#max_dwell_force_drop: 75
-#   Maximums for tap quality checks expressed as a percentage.
+#   default value is: 4 / 60 = 0.066. This collects samples from 4 cycles of
+#   60Hz mains power to cancel power line noise.
+#sample_retract_dist: 2.0
+#   The distance the toolhead is lifted after each tap while the ascent
+#   samples are collected. It replaces the generic [probe] retract, which is
+#   not performed a second time.
 #z_offset:
 #speed:
 #samples:
-#sample_retract_dist:
 #lift_speed:
 #samples_result:
 #samples_tolerance:
 #samples_tolerance_retries:
 #activate_gcode:
 #deactivate_gcode:
+#bad_probe_strategy:
+#bad_probe_retries:
 #   See the "[probe]" section for a description of the above parameters.
 ```
-
-See [Tap Quality Components](Load_Cell.md#tap-quality-components) for more details on maximum for tap quality.
 
 ## Board specific hardware support
 

@@ -49,13 +49,23 @@ class BulkAdcSensor(Protocol):
         ...
 
 
-class McuLoadCellProbe(Protocol):
-    """Attach a sensor to a LoadCell object on the MCU"""
+class TriggerAnalogSensor(Protocol):
+    """Attach a sensor to a trigger_analog object on the MCU"""
 
-    def attach_load_cell_probe(self, load_cell_probe_oid: int): ...
+    def setup_trigger_analog(self, trigger_analog_oid: int):
+        """Queue the MCU init command that routes samples to trigger_analog"""
+        ...
+
+    def lookup_sensor_error(self, error_code: int) -> str:
+        """Describe a sensor specific trigger_analog error code"""
+        ...
+
+    def get_status(self, eventtime) -> dict:
+        """Report sensor errors/overflows/sample_rate"""
+        ...
 
 
-class LoadCellSensor(BulkAdcSensor, McuLoadCellProbe):
+class LoadCellSensor(BulkAdcSensor, TriggerAnalogSensor):
     """The complete load cell interface"""
 
     ...

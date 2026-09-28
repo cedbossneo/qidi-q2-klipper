@@ -154,8 +154,15 @@ class ADS131MxBase(LoadCellSensor):
             UPDATE_INTERVAL,
         )
         mcu.register_config_callback(self._build_config)
-        self.attach_probe_cmd = None
         self.query_ads131m0x_cmd = None
+        self._sensor_errors: Dict[int, str] = {}
+
+    def setup_trigger_analog(self, trigger_analog_oid: int):
+        self.mcu.add_config_cmd(
+            f"ads131m0x_attach_trigger_analog oid={self.oid} "
+            f"trigger_analog_oid={trigger_analog_oid}",
+            is_init=True,
+        )
 
     def _build_config(self):
         cq = self.spi.get_command_queue()
@@ -171,12 +178,11 @@ class ADS131MxBase(LoadCellSensor):
         self.query_ads131m0x_cmd = self.mcu.lookup_command(
             "query_ads131m0x oid=%c rest_ticks=%u", cq=cq
         )
-        self.attach_probe_cmd = self.mcu.lookup_command(
-            "ads131m0x_attach_load_cell_probe oid=%c load_cell_probe_oid=%c"
-        )
         self.ffreader.setup_query_command(
             "query_ads131m0x_status oid=%c", oid=self.oid, cq=cq
         )
+        errors = self.mcu.get_enumerations().get("ads131m0x_error:", {})
+        self._sensor_errors = {v: k for k, v in errors.items()}
 
     def _read_channels(self, config: ConfigWrapper):
         channels = config.getintlist("channels", default=(0,))
@@ -213,8 +219,17 @@ class ADS131MxBase(LoadCellSensor):
     def add_client(self, callback: BulkAdcDataCallback):
         self.batch_bulk.add_client(callback)
 
-    def attach_load_cell_probe(self, load_cell_probe_oid: int):
-        self.attach_probe_cmd.send([self.oid, load_cell_probe_oid])
+    def get_status(self, eventtime):
+        return {
+            "errors": self.last_error_count,
+            "overflows": self.ffreader.get_last_overflows(),
+            "sample_rate": self.get_samples_per_second(),
+        }
+
+    def lookup_sensor_error(self, error_code: int) -> str:
+        return self._sensor_errors.get(
+            error_code, f"Unknown {self.sensor_type} error {error_code}"
+        )
 
     # Measurement decoding
     def _convert_samples(self, samples):

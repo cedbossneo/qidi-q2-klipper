@@ -158,7 +158,6 @@ class ADS1220(LoadCellSensor):
             UPDATE_INTERVAL,
         )
         # Command Configuration
-        self.attach_probe_cmd = None
         mcu.add_config_cmd(
             "config_ads1220 oid=%d spi_oid=%d data_ready_pin=%s"
             % (self.oid, self.spi.get_oid(), self.data_ready_pin)
@@ -169,13 +168,17 @@ class ADS1220(LoadCellSensor):
         mcu.register_config_callback(self._build_config)
         self.query_ads1220_cmd = None
 
+    def setup_trigger_analog(self, trigger_analog_oid: int):
+        self.mcu.add_config_cmd(
+            "ads1220_attach_trigger_analog oid=%d trigger_analog_oid=%d"
+            % (self.oid, trigger_analog_oid),
+            is_init=True,
+        )
+
     def _build_config(self):
         cmdqueue = self.spi.get_command_queue()
         self.query_ads1220_cmd = self.mcu.lookup_command(
             "query_ads1220 oid=%c rest_ticks=%u", cq=cmdqueue
-        )
-        self.attach_probe_cmd = self.mcu.lookup_command(
-            "ads1220_attach_load_cell_probe oid=%c load_cell_probe_oid=%c"
         )
         self.ffreader.setup_query_command(
             "query_ads1220_status oid=%c", oid=self.oid, cq=cmdqueue
@@ -199,8 +202,15 @@ class ADS1220(LoadCellSensor):
     def add_client(self, callback: BulkAdcDataCallback):
         self.batch_bulk.add_client(callback)
 
-    def attach_load_cell_probe(self, load_cell_probe_oid: int):
-        self.attach_probe_cmd.send([self.oid, load_cell_probe_oid])
+    def get_status(self, eventtime):
+        return {
+            "errors": self.last_error_count,
+            "overflows": self.ffreader.get_last_overflows(),
+            "sample_rate": self.get_samples_per_second(),
+        }
+
+    def lookup_sensor_error(self, error_code: int) -> str:
+        return "Unknown ads1220 error %d" % (error_code,)
 
     # Measurement decoding
     def _convert_samples(self, samples):
