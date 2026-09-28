@@ -436,6 +436,9 @@ class MCU_trigger_analog:
 
     def _clear_home(self):
         self._home_cmd.send([self._oid, 0, 0, 0, 0, 0, 0, 0])
+        if self._mcu.is_fileoutput():
+            # Kalico has no dummy query responses in batch mode
+            return 0.0
         params = self._query_state_cmd.send([self._oid])
         trigger_ticks = self._mcu.clock32_to_clock64(params["homing_clock"])
         return self._mcu.clock_to_print_time(trigger_ticks)
