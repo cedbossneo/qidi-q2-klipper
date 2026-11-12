@@ -3,11 +3,11 @@
     "happy-hare": {
       "flake": false,
       "locked": {
-        "lastModified": 1789744360,
-        "narHash": "sha256-ZBDdgYmmSK2t4d2winyMVgpa2mmyQBBI9AFEHU6y/7o=",
+        "lastModified": 1794440241,
+        "narHash": "sha256-yCssd0ObN+A9vbxp3wcIKQ6oBtjVDKreCIgtHw37tQo=",
         "owner": "moggieuk",
         "repo": "Happy-Hare",
-        "rev": "c54c736043a49f901ab685fa031d4f4edd066dc6",
+        "rev": "c176ecc20567d32dc5f46854b1813478ecf25f31",
         "type": "github"
       },
       "original": {
